@@ -14,7 +14,7 @@ html,body{background:#15181d;color:#cdd;font-family:arial,sans-serif;margin:0;he
 <body>
 <canvas id="loadingCanvas" oncontextmenu="event.preventDefault()" width="800" height="600"></canvas>
 <canvas id="canvas" oncontextmenu="event.preventDefault()" style="visibility:hidden"></canvas>
-<button id="entToggle" title="Switch between Balatro + Entropy and plain Balatro (reloads)">Entropy</button>
+<button id="entToggle" title="Switch between Modded (Entropy + Cryptid) and plain Balatro (reloads)">Modded</button>
 <script>
 function fitCanvas(){
   var c=document.getElementById('canvas');
@@ -29,7 +29,7 @@ var ENTROPY_OFF = false;
 try { ENTROPY_OFF = localStorage.getItem('balatro_entropy_off') === '1'; } catch(e){}
 (function(){
   var btn = document.getElementById('entToggle');
-  btn.textContent = ENTROPY_OFF ? 'Entropy: OFF' : 'Entropy: ON';
+  btn.textContent = ENTROPY_OFF ? 'Modded: OFF' : 'Modded: ON';
   btn.onclick = function(){
     try { if (ENTROPY_OFF) localStorage.removeItem('balatro_entropy_off');
           else localStorage.setItem('balatro_entropy_off','1'); } catch(e){}
