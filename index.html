@@ -25,7 +25,6 @@ function fitCanvas(){
 window.addEventListener('resize', fitCanvas);
 setInterval(fitCanvas, 300);
 
-// ---- which game? ----
 var ENTROPY_OFF = false;
 try { ENTROPY_OFF = localStorage.getItem('balatro_entropy_off') === '1'; } catch(e){}
 (function(){
@@ -38,9 +37,6 @@ try { ENTROPY_OFF = localStorage.getItem('balatro_entropy_off') === '1'; } catch
   };
 })();
 
-var DATA_FILE = ENTROPY_OFF ? 'game-vanilla.data' : 'game.data';
-var GAME_JS   = ENTROPY_OFF ? 'game-vanilla.js'   : 'game.js';
-
 var loadingContext = document.getElementById('loadingCanvas').getContext('2d');
 function drawLoadingText(t){
   var c=loadingContext.canvas;
@@ -49,19 +45,22 @@ function drawLoadingText(t){
   loadingContext.fillText(t,c.scrollWidth/2,c.scrollHeight/2);
   loadingContext.fillText("Balatro",c.scrollWidth/2,c.scrollHeight/4);
 }
+drawLoadingText('Loading...');
 window.onload=function(){window.focus();};
 window.onclick=function(){window.focus();};
 window.addEventListener("keydown",function(e){ if([32,37,38,39,40].indexOf(e.keyCode)>-1) e.preventDefault(); },false);
 
-var RUN_ARGS = ['./game.love'];
-if (ENTROPY_OFF) RUN_ARGS.push('--no-entropy');
-try { if (localStorage.getItem('balatro_skip_tutorial') === '1') RUN_ARGS.push('--skip-tutorial'); } catch(e){}
+var DATA_URL = null;  // set once the chunks are stitched; locateFile hands it to the packager
 
 var Module = {
-  arguments: RUN_ARGS,
+  arguments: (function(){
+    var a=['./game.love'];
+    if (ENTROPY_OFF) a.push('--no-entropy');
+    try { if (localStorage.getItem('balatro_skip_tutorial') === '1') a.push('--skip-tutorial'); } catch(e){}
+    return a;
+  })(),
   INITIAL_MEMORY: 1610612736,
-  // map the packager's 'game.data' to the selected build; leave love.wasm etc. alone
-  locateFile: function(path){ return path === 'game.data' ? DATA_FILE : path; },
+  locateFile: function(path){ return path === 'game.data' ? DATA_URL : path; },
   print: function(t){
     try { console.log(t); } catch(e){}
     var m = /\[\[BALATRO_LS:([a-z_]+)=([^\]]*)\]\]/.exec(t);
@@ -90,18 +89,37 @@ var Module = {
     Module.setStatus(left ? 'Preparing... ('+(this.totalDependencies-left)+'/'+this.totalDependencies+')' : 'All downloads complete.');
   }
 };
-Module.setStatus('Loading...');
 window.onerror=function(){ Module.setStatus('Exception thrown, see JavaScript console'); };
 
-// load the selected build's data packager, then the shared love.js runtime
-(function(){
-  var g=document.createElement('script'); g.src=GAME_JS;
-  g.onload=function(){
-    var l=document.createElement('script'); l.src='love.js';
-    l.onload=function(){ Love(Module); };
-    document.body.appendChild(l);
-  };
-  document.body.appendChild(g);
+// fetch game.data.000..N-1, concat into one Blob, return its object URL
+async function stitch(name, chunks, total){
+  var parts=[], loaded=0;
+  for (var i=0;i<chunks;i++){
+    var url = name + '.' + ('00'+i).slice(-3);
+    var resp = await fetch(url);
+    if(!resp.ok) throw new Error('fetch '+url+' -> '+resp.status);
+    var buf = await resp.arrayBuffer();
+    parts.push(new Uint8Array(buf));
+    loaded += buf.byteLength;
+    drawLoadingText('Loading data... ' + Math.round(loaded/1048576) + ' / ' + Math.round(total/1048576) + ' MB');
+  }
+  return URL.createObjectURL(new Blob(parts, {type:'application/octet-stream'}));
+}
+
+(async function(){
+  try {
+    var m = await (await fetch('manifest.json')).json();
+    var b = ENTROPY_OFF ? m.vanilla : m.entropy;
+    DATA_URL = await stitch(b.data, b.chunks, b.size);
+    drawLoadingText('Starting...');
+    // load the selected build's packager (needs DATA_URL ready for locateFile), then the runtime
+    await new Promise(function(res,rej){ var s=document.createElement('script'); s.src=b.js; s.onload=res; s.onerror=rej; document.body.appendChild(s); });
+    await new Promise(function(res,rej){ var s=document.createElement('script'); s.src='love.js'; s.onload=res; s.onerror=rej; document.body.appendChild(s); });
+    Love(Module);
+  } catch(e){
+    drawLoadingText('Load error: ' + e.message);
+    console.error(e);
+  }
 })();
 </script>
 </body>
