@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en-us">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, minimum-scale=1, maximum-scale=1">
+<title>Balatro</title>
+<style>
+html,body{background:#15181d;color:#cdd;font-family:arial,sans-serif;margin:0;height:100%;overflow:hidden}
+#canvas,#loadingCanvas{display:block;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
+#entToggle{position:fixed;top:6px;right:8px;z-index:20;font:11px arial;padding:3px 8px;background:rgba(20,24,29,.7);color:#9fb;border:1px solid #456;border-radius:4px;cursor:pointer;opacity:.5}
+#entToggle:hover{opacity:1}
+</style>
+</head>
+<body>
+<canvas id="loadingCanvas" oncontextmenu="event.preventDefault()" width="800" height="600"></canvas>
+<canvas id="canvas" oncontextmenu="event.preventDefault()" style="visibility:hidden"></canvas>
+<button id="entToggle" title="Switch between Balatro + Entropy and plain Balatro (reloads)">Entropy</button>
+<script>
+function fitCanvas(){
+  var c=document.getElementById('canvas');
+  if(!c||!c.width||!c.height) return;
+  var s=Math.min(window.innerWidth/c.width, window.innerHeight/c.height);
+  c.style.width=(c.width*s)+'px'; c.style.height=(c.height*s)+'px';
+}
+window.addEventListener('resize', fitCanvas);
+setInterval(fitCanvas, 300);
+
+// ---- which game? ----
+var ENTROPY_OFF = false;
+try { ENTROPY_OFF = localStorage.getItem('balatro_entropy_off') === '1'; } catch(e){}
+(function(){
+  var btn = document.getElementById('entToggle');
+  btn.textContent = ENTROPY_OFF ? 'Entropy: OFF' : 'Entropy: ON';
+  btn.onclick = function(){
+    try { if (ENTROPY_OFF) localStorage.removeItem('balatro_entropy_off');
+          else localStorage.setItem('balatro_entropy_off','1'); } catch(e){}
+    location.reload();
+  };
+})();
+
+var DATA_FILE = ENTROPY_OFF ? 'game-vanilla.data' : 'game.data';
+var GAME_JS   = ENTROPY_OFF ? 'game-vanilla.js'   : 'game.js';
+
+var loadingContext = document.getElementById('loadingCanvas').getContext('2d');
+function drawLoadingText(t){
+  var c=loadingContext.canvas;
+  loadingContext.fillStyle="rgb(142,195,227)"; loadingContext.fillRect(0,0,c.scrollWidth,c.scrollHeight);
+  loadingContext.font='2em arial'; loadingContext.textAlign='center'; loadingContext.fillStyle="rgb(11,86,117)";
+  loadingContext.fillText(t,c.scrollWidth/2,c.scrollHeight/2);
+  loadingContext.fillText("Balatro",c.scrollWidth/2,c.scrollHeight/4);
+}
+window.onload=function(){window.focus();};
+window.onclick=function(){window.focus();};
+window.addEventListener("keydown",function(e){ if([32,37,38,39,40].indexOf(e.keyCode)>-1) e.preventDefault(); },false);
+
+var RUN_ARGS = ['./game.love'];
+if (ENTROPY_OFF) RUN_ARGS.push('--no-entropy');
+try { if (localStorage.getItem('balatro_skip_tutorial') === '1') RUN_ARGS.push('--skip-tutorial'); } catch(e){}
+
+var Module = {
+  arguments: RUN_ARGS,
+  INITIAL_MEMORY: 1610612736,
+  // map the packager's 'game.data' to the selected build; leave love.wasm etc. alone
+  locateFile: function(path){ return path === 'game.data' ? DATA_FILE : path; },
+  print: function(t){
+    try { console.log(t); } catch(e){}
+    var m = /\[\[BALATRO_LS:([a-z_]+)=([^\]]*)\]\]/.exec(t);
+    if (m) {
+      try { if (m[2] === '') localStorage.removeItem(m[1]); else localStorage.setItem(m[1], m[2]); } catch(e){}
+      location.reload();
+    }
+  },
+  printErr: console.error.bind(console),
+  canvas: (function(){
+    var canvas=document.getElementById('canvas');
+    canvas.addEventListener("webglcontextlost",function(e){ alert('WebGL context lost. Reload the page.'); e.preventDefault(); },false);
+    return canvas;
+  })(),
+  setStatus: function(t){
+    if(t){ drawLoadingText(t); }
+    else if(Module.remainingDependencies===0){
+      document.getElementById('loadingCanvas').style.display='none';
+      document.getElementById('canvas').style.visibility='visible';
+    }
+  },
+  totalDependencies:0, remainingDependencies:0,
+  monitorRunDependencies: function(left){
+    this.remainingDependencies=left;
+    this.totalDependencies=Math.max(this.totalDependencies,left);
+    Module.setStatus(left ? 'Preparing... ('+(this.totalDependencies-left)+'/'+this.totalDependencies+')' : 'All downloads complete.');
+  }
+};
+Module.setStatus('Loading...');
+window.onerror=function(){ Module.setStatus('Exception thrown, see JavaScript console'); };
+
+// load the selected build's data packager, then the shared love.js runtime
+(function(){
+  var g=document.createElement('script'); g.src=GAME_JS;
+  g.onload=function(){
+    var l=document.createElement('script'); l.src='love.js';
+    l.onload=function(){ Love(Module); };
+    document.body.appendChild(l);
+  };
+  document.body.appendChild(g);
+})();
+</script>
+</body>
+</html>
