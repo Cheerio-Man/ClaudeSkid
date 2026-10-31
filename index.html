@@ -92,10 +92,10 @@ var Module = {
 window.onerror=function(){ Module.setStatus('Exception thrown, see JavaScript console'); };
 
 // fetch game.data.000..N-1, concat into one Blob, return its object URL
-async function stitch(name, chunks, total){
+async function stitch(name, chunks, total, ver){
   var parts=[], loaded=0;
   for (var i=0;i<chunks;i++){
-    var url = name + '.' + ('00'+i).slice(-3);
+    var url = name + '.' + ('00'+i).slice(-3) + '?v=' + (ver||'0');
     var resp = await fetch(url);
     if(!resp.ok) throw new Error('fetch '+url+' -> '+resp.status);
     var buf = await resp.arrayBuffer();
@@ -108,13 +108,21 @@ async function stitch(name, chunks, total){
 
 (async function(){
   try {
-    var m = await (await fetch('manifest.json')).json();
+    // Drop Emscripten's IndexedDB package cache ("EM_PRELOAD_CACHE") before loading, so a
+    // stale/corrupt cached game.data can never be served against new code. The data chunks
+    // stay in the normal HTTP cache (keyed by ?v below), so this only re-stitches them.
+    await new Promise(function(res){ try { var r=indexedDB.deleteDatabase('EM_PRELOAD_CACHE'); r.onsuccess=r.onerror=r.onblocked=function(){res();}; } catch(e){ res(); } });
+    // Always fetch the (tiny) manifest cache-busted, then tag every other asset with
+    // its build version. This stops the browser serving a STALE game.js against freshly
+    // uploaded data chunks (old file offsets + new bytes = corrupt FS = boot crash).
+    var m = await (await fetch('manifest.json?_=' + Date.now(), {cache:'no-store'})).json();
+    var VER = m.version || '0';
     var b = ENTROPY_OFF ? m.vanilla : m.entropy;
-    DATA_URL = await stitch(b.data, b.chunks, b.size);
+    DATA_URL = await stitch(b.data, b.chunks, b.size, VER);
     drawLoadingText('Starting...');
     // load the selected build's packager (needs DATA_URL ready for locateFile), then the runtime
-    await new Promise(function(res,rej){ var s=document.createElement('script'); s.src=b.js; s.onload=res; s.onerror=rej; document.body.appendChild(s); });
-    await new Promise(function(res,rej){ var s=document.createElement('script'); s.src='love.js'; s.onload=res; s.onerror=rej; document.body.appendChild(s); });
+    await new Promise(function(res,rej){ var s=document.createElement('script'); s.src=b.js+'?v='+VER; s.onload=res; s.onerror=rej; document.body.appendChild(s); });
+    await new Promise(function(res,rej){ var s=document.createElement('script'); s.src='love.js?v='+VER; s.onload=res; s.onerror=rej; document.body.appendChild(s); });
     Love(Module);
   } catch(e){
     drawLoadingText('Load error: ' + e.message);
